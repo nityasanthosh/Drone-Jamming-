@@ -19,7 +19,6 @@
 
 <br/>
 <br/>
-<br/>
 
 ## Key features
 1.AES encryption and authentication <br/>
