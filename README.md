@@ -25,7 +25,7 @@
 1.AES encryption and authentication <br/>
 2.FFT based signal monitoring and Continuous data backup <br/>
 3.FHSS (Frequency Hopping Spread Spectrum) <br/>
-4. Instant Failsafe mechanism ( cryptographic data erasure followed by RTH) <br/>
+4.Instant Failsafe mechanism ( cryptographic data erasure followed by RTH) <br/>
 
 
 
