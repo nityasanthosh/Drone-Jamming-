@@ -1,0 +1,290 @@
+!apt-get install -y portaudio19-dev libportaudio2 libportaudiocpp0
+!pip install pyaudio
+import os
+import logging
+import time
+import numpy as np
+from sklearn.metrics import confusion_matrix, roc_curve, auc
+import matplotlib.pyplot as plt
+from cryptography.fernet import Fernet
+from pathlib import Path
+import random
+import shutil
+import threading
+from datetime import datetime
+
+
+class SignalMonitor:
+    def __init__(self, log_file="signal_monitoring.log"):
+        self.current_rssi = -50
+        self.current_frequency = 2400
+        self.frequency_channels = list(range(2400, 2484, 2))
+        self.logging_interval = 10
+        self.last_log_time = time.time()
+        self.interference_threshold = 50  # Threshold for interference detection
+
+        # Configure logging
+        self.logger = logging.getLogger('signal_monitor')
+        self.logger.setLevel(logging.INFO)
+        fh = logging.FileHandler(log_file)
+        fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+        self.logger.addHandler(fh)
+
+    def detect_interference(self, fft_result):
+        """Detect interference based on FFT analysis."""
+        peak_magnitude = np.max(fft_result)
+        return peak_magnitude > self.interference_threshold
+
+    def monitor_rssi(self):
+        self.current_rssi += random.uniform(-5, 5)
+        return self.current_rssi
+
+    def perform_fft_analysis(self):
+        signal_data = np.random.normal(0, 1, 1024)
+        fft_result = np.abs(np.fft.fft(signal_data))
+        return fft_result
+
+    def implement_fhss(self):
+        self.current_frequency = random.choice(self.frequency_channels)
+        return self.current_frequency
+
+    def log_status(self, force=False):
+        current_time = time.time()
+        if force or (current_time - self.last_log_time >= self.logging_interval):
+            fft_peak = np.max(self.perform_fft_analysis())
+            self.logger.info(
+                f"RSSI: {self.current_rssi:.2f} dBm | "
+                f"Frequency: {self.current_frequency} MHz | "
+                f"FFT Peak: {fft_peak:.2f}"
+            )
+            self.last_log_time = current_time
+
+    def visualize_rssi_signal(self, rssi_values, timestamps, interference_index=None):
+        plt.figure(figsize=(10, 6))
+        plt.plot(timestamps, rssi_values, label="RSSI Signal", color="blue")
+        if interference_index is not None:
+            plt.axvline(x=timestamps[interference_index], color='red', linestyle='--', label="Interference Detected")
+            plt.text(timestamps[interference_index], rssi_values[interference_index], 'Interference', color='red')
+        plt.xlabel("Time (s)")
+        plt.ylabel("RSSI (dBm)")
+        plt.title("RSSI Signal Over Time")
+        plt.legend()
+        plt.grid()
+        plt.show()
+
+    def visualize_fhss(self, frequency_values, timestamps):
+        plt.figure(figsize=(10, 6))
+        plt.step(timestamps, frequency_values, label="FHSS Frequencies", where="post", color="green")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Frequency (MHz)")
+        plt.title("Frequency Hopping Spread Spectrum (FHSS) Over Time")
+        plt.legend()
+        plt.grid()
+        plt.show()
+
+
+class DroneDataProcessor:
+    def __init__(self, ground_station_key):
+        self.key = ground_station_key
+        self.fernet = Fernet(self.key)
+        self.data_buffer = []
+        self.backup_path = Path("ground_station_backup")
+        self.backup_path.mkdir(exist_ok=True)
+        self.interference_detected = False
+        self.gps_home_location = {"lat": 40.7128, "lon": -74.0060}  # Example coordinates
+
+        # Configure logging
+        self.logger = logging.getLogger('data_processor')
+        self.logger.setLevel(logging.INFO)
+        fh = logging.FileHandler('data_processing.log')
+        fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+        self.logger.addHandler(fh)
+
+        self.signal_monitor = SignalMonitor()
+        self.signal_thread = threading.Thread(target=self.continuous_signal_monitoring, daemon=True)
+        self.signal_thread.start()
+
+    def cryptographic_erasure(self):
+        """Perform cryptographic erasure of all data."""
+        try:
+            initial_count = len(list(self.backup_path.glob('*')))
+            for file in self.backup_path.glob('*'):
+                file.unlink()
+            final_count = len(list(self.backup_path.glob('*')))
+            return initial_count, final_count
+        except Exception as e:
+            self.logger.error(f"Error during data erasure: {e}")
+            return 0, 0
+
+    def initiate_rth(self):
+        """Initiate Return to Home procedure."""
+        self.logger.info("RTH Protocol Initiated - Returning to GPS coordinates: "
+                        f"Lat {self.gps_home_location['lat']}, Lon {self.gps_home_location['lon']}")
+        print("\n!!! RTH INITIATED - RETURNING TO HOME LOCATION !!!")
+
+    def execute_failsafe(self):
+        """Execute failsafe procedures."""
+        detection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"\n!!! INTERFERENCE DETECTED - INITIATING FAILSAFE PROCEDURES at {detection_time} !!!")
+
+        initial_files, remaining_files = self.cryptographic_erasure()
+        print(f"Data Erasure Complete - {initial_files} files erased, {remaining_files} files remaining")
+
+        self.initiate_rth()
+        self.visualize_rssi_interference()
+        self.visualize_data_erasure_accuracy(initial_files, remaining_files)
+
+    def visualize_rssi_interference(self):
+        rssi_values = [self.signal_monitor.monitor_rssi() for _ in range(100)]
+        timestamps = np.linspace(0, 10, len(rssi_values))
+        interference_index = 80  # Example interference point
+
+        self.signal_monitor.visualize_rssi_signal(rssi_values, timestamps, interference_index)
+
+    def visualize_data_erasure_accuracy(self, initial_files, remaining_files):
+        """Visualize the accuracy of data erasure using confusion matrix and ROC curve."""
+        # Simulate labels for confusion matrix (simplified for illustration)
+        actual = [1] * initial_files  # Files that should be erased (1)
+
+        # Adjust predicted to have at least one element for confusion_matrix when remaining_files is 0
+        predicted = [0] * remaining_files if remaining_files else [1]  # Ensure predicted is not empty
+
+        # Confusion Matrix
+        cm = confusion_matrix(actual, predicted)
+        self.logger.info(f"Confusion Matrix:\n{cm}")
+        print("Confusion Matrix:")
+        print(cm)
+
+        # ROC Curve (Simplified illustration)
+        fpr, tpr, thresholds = roc_curve(actual, predicted)
+        roc_auc = auc(fpr, tpr)
+
+        plt.figure(figsize=(8, 5))
+        plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC Curve (area = {roc_auc:.2f})')
+        plt.plot([0, 1], [0, 1], color='gray', linestyle='--')
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('Receiver Operating Characteristic')
+        plt.legend(loc="lower right")
+        plt.show()
+
+        # Bar plot for visualization
+        plt.figure(figsize=(8, 5))
+        plt.bar(["Initial Files", "Remaining Files"], [initial_files, remaining_files], color=["orange", "blue"])
+        plt.ylabel("Number of Files")
+        plt.title("Data Erasure Accuracy")
+        plt.ylim(0, max(initial_files, 1) + 10)
+        plt.show()
+
+    def visualize_model_accuracy(self, true_positives, false_positives, true_negatives, false_negatives):
+        labels = ["True Positives", "False Positives", "True Negatives", "False Negatives"]
+        values = [true_positives, false_positives, true_negatives, false_negatives]
+
+        plt.figure(figsize=(8, 5))
+        plt.bar(labels, values, color=["green", "red", "blue", "orange"])
+        plt.ylabel("Counts")
+        plt.title("Model Accuracy Visualization")
+        plt.show()
+
+    def continuous_signal_monitoring(self):
+        last_status_time = time.time()
+        status_interval = 30
+        rssi_values = []
+        frequency_values = []
+        timestamps = []
+
+        while True:
+            rssi = self.signal_monitor.monitor_rssi()
+            fft_result = self.signal_monitor.perform_fft_analysis()
+            new_frequency = self.signal_monitor.implement_fhss()
+
+            current_time = time.time()
+            rssi_values.append(rssi)
+            frequency_values.append(new_frequency)
+            timestamps.append(current_time - self.signal_monitor.last_log_time)
+
+            if self.signal_monitor.detect_interference(fft_result):
+                if not self.interference_detected:
+                    self.interference_detected = True
+                    print(f"\n!!! Interference Detected at {datetime.now()} !!!")
+                    self.execute_failsafe()
+                    break
+            else:
+                if current_time - last_status_time >= status_interval:
+                    print("\nNormal Operation - No Interference Detected")
+                    last_status_time = current_time
+
+            self.signal_monitor.log_status()
+            time.sleep(0.1)
+
+    def capture_and_process_data(self):
+        last_status_time = time.time()
+        status_interval = 30
+
+        while True:
+            try:
+                if self.interference_detected:
+                    break
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+                # Capture and process data
+                image_data = self.capture_image()
+                audio_data = self.capture_audio()
+                video_data = self.capture_video_frame()
+
+                data_row = {
+                    'timestamp': timestamp,
+                    'image_data': base64.b64encode(image_data).decode(),
+                    'audio_data': base64.b64encode(audio_data).decode(),
+                    'video_data': base64.b64encode(video_data).decode()
+                }
+
+                encrypted_data = self.encrypt_data(data_row)
+                self.backup_to_ground_station(encrypted_data, timestamp)
+
+                # Log to file instead of console
+                self.logger.info(
+                    f"Data processed - Image: {len(image_data)} bytes, "
+                    f"Audio: {len(audio_data)} bytes, "
+                    f"Video: {len(video_data)} bytes"
+                )
+
+                # Print status updates at intervals
+                current_time = time.time()
+                if current_time - last_status_time >= status_interval:
+                    print("\nStatus: Data Processing Active - System Functioning Normally")
+                    last_status_time = current_time
+
+                time.sleep(1)
+
+            except KeyboardInterrupt:
+                print("\nStopping data capture...")
+                break
+
+    def capture_image(self):
+        return np.random.bytes(1024)
+
+    def capture_audio(self):
+        return np.random.bytes(512)
+
+    def capture_video_frame(self):
+        return np.random.bytes(2048)
+
+    def encrypt_data(self, data):
+        data_str = str(data)
+        return self.fernet.encrypt(data_str.encode())
+
+    def backup_to_ground_station(self, encrypted_data, timestamp):
+        backup_file = self.backup_path / f"drone_data_{timestamp}.enc"
+        with open(backup_file, 'wb') as f:
+            f.write(encrypted_data)
+
+
+if __name__ == "__main__":
+    key = Fernet.generate_key()
+    print("Drone System Initialized")
+    print("Signal Monitoring and Data Processing Active\n")
+
+    processor = DroneDataProcessor(key)
+    processor.capture_and_process_data()
