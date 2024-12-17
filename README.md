@@ -1,5 +1,3 @@
-# Drone-Jamming
-
 <h1 align ="left">
   Kavach
 </h1>
